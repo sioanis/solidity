@@ -5,7 +5,8 @@ Language Features:
 
 
 Compiler Features:
-* JSON-AST: Added selector field for errors and events.
+ * JSON-AST: Added selector field for errors and events.
+ * Yul Optimizer: Remove ``sstore`` and ``mstore`` operations that are never read from.
 
 Bugfixes:
  * Yul IR Code Generation: Optimize embedded creation code with correct settings. This fixes potential mismatches between the constructor code of a contract compiled in isolation and the bytecode in ``type(C).creationCode``, resp. the bytecode used for ``new C(...)``.
