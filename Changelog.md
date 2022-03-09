@@ -5,6 +5,8 @@ Language Features:
 
 
 Compiler Features:
+ * Commandline Interface: Allow the use of ``--via-ir`` in place of ``--experimental-via-ir``.
+ * Compilation via Yul IR is no longer marked as experimental.
 * JSON-AST: Added selector field for errors and events.
 
 Bugfixes:
