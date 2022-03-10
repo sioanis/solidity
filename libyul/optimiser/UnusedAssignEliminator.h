@@ -113,7 +113,10 @@ public:
 	static constexpr char const* name{"UnusedAssignEliminator"};
 	static void run(OptimiserStepContext&, Block& _ast);
 
-	explicit UnusedAssignEliminator(Dialect const& _dialect): UnusedStoreBase(_dialect) {}
+	explicit UnusedAssignEliminator(
+		Dialect const& _dialect,
+		std::map<YulString, ControlFlowSideEffects> _controlFlowSideEffects
+	): UnusedStoreBase(_dialect, std::move(_controlFlowSideEffects)) {}
 
 	void operator()(Identifier const& _identifier) override;
 	void operator()(VariableDeclaration const& _variableDeclaration) override;

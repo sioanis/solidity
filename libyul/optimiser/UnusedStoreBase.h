@@ -22,6 +22,7 @@
 #pragma once
 
 #include <libyul/optimiser/ASTWalker.h>
+#include <libyul/ControlFlowSideEffects.h>
 #include <libyul/AST.h>
 
 #include <range/v3/action/remove_if.hpp>
@@ -46,7 +47,10 @@ struct Dialect;
 class UnusedStoreBase: public ASTWalker
 {
 public:
-	explicit UnusedStoreBase(Dialect const& _dialect): m_dialect(_dialect) {}
+	UnusedStoreBase(
+		Dialect const& _dialect,
+		std::map<YulString, ControlFlowSideEffects> _controlFlowSideEffects
+	): m_dialect(_dialect), m_controlFlowSideEffects(std::move(_controlFlowSideEffects)) {}
 
 	using ASTWalker::operator();
 	void operator()(If const& _if) override;
@@ -89,7 +93,10 @@ protected:
 	static void merge(TrackedStores& _target, TrackedStores&& _source);
 	static void merge(TrackedStores& _target, std::vector<TrackedStores>&& _source);
 
+	bool continuesExecution(Block const& _block);
+
 	Dialect const& m_dialect;
+	std::map<YulString, ControlFlowSideEffects> m_controlFlowSideEffects;
 	std::set<Statement const*> m_pendingRemovals;
 	TrackedStores m_stores;
 

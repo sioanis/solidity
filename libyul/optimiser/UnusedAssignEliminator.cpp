@@ -24,6 +24,7 @@
 
 #include <libyul/optimiser/Semantics.h>
 #include <libyul/optimiser/OptimizerUtilities.h>
+#include <libyul/ControlFlowSideEffectsCollector.h>
 #include <libyul/AST.h>
 
 #include <libsolutil/CommonData.h>
@@ -36,7 +37,10 @@ using namespace solidity::yul;
 
 void UnusedAssignEliminator::run(OptimiserStepContext& _context, Block& _ast)
 {
-	UnusedAssignEliminator rae{_context.dialect};
+	UnusedAssignEliminator rae{
+		_context.dialect,
+		ControlFlowSideEffectsCollector{_context.dialect, _ast}.functionSideEffectsNamed()
+	};
 	rae(_ast);
 
 	StatementRemover remover{rae.m_pendingRemovals};
