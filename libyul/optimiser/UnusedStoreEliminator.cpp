@@ -264,6 +264,44 @@ bool UnusedStoreEliminator::knownUnrelated(
 		)
 			return true;
 
+#if 0
+		if (_op1.start && _op1.length && _op2.start)
+		{
+			optional<u256> length1 = knowledge.valueIfKnownConstant(*_op1.length);
+			optional<u256> start1 = knowledge.valueIfKnownConstant(*_op1.start);
+			optional<u256> start2 = knowledge.valueIfKnownConstant(*_op2.start);
+			if (
+				(length1 && start1 && start2) &&
+				*start1 + *length1 >= *start1 && // no overflow
+				*start1 + *length1 <= *start2
+			)
+				return true;
+		}
+		if (_op2.start && _op2.length && _op1.start)
+		{
+			optional<u256> length2 = knowledge.valueIfKnownConstant(*_op2.length);
+			optional<u256> start2 = knowledge.valueIfKnownConstant(*_op2.start);
+			optional<u256> start1 = knowledge.valueIfKnownConstant(*_op1.start);
+			if (
+				(length2 && start2 && start1) &&
+				*start2 + *length2 >= *start2 && // no overflow
+				*start2 + *length2 <= *start1
+			)
+				return true;
+		}
+
+		if (_op1.start && _op1.length && _op2.start && _op2.length)
+		{
+			optional<u256> length1 = knowledge.valueIfKnownConstant(*_op1.length);
+			optional<u256> length2 = knowledge.valueIfKnownConstant(*_op2.length);
+			if (
+				(length1 && *length1 <= 32) &&
+				(length2 && *length2 <= 32) &&
+				knowledge.knownToBeDifferentByAtLeast32(*_op1.start, *_op2.start)
+			)
+				return true;
+		}
+#else
 		u256 largeNumber = u256(1) << 255;
 		// Due to wrapping arithmetic, the below code can have "false positives".
 		// In the situation that the subtraction for computing "diff" wraps,
@@ -295,6 +333,7 @@ bool UnusedStoreEliminator::knownUnrelated(
 				if (*length2 <= *diff && *diff <= largeNumber)
 					return true;
 		}
+#endif
 	}
 
 	return false;
