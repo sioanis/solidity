@@ -25,21 +25,15 @@ For a good overview and starting point, please check out the official [Solidity 
 
 ## Background
 
-Solidity is a statically-typed curly-braces programming language designed for developing smart contracts
-that run on the Ethereum Virtual Machine. Smart contracts are programs that are executed inside a peer-to-peer
-network where nobody has special authority over the execution, and thus they allow to implement tokens of value,
-ownership, voting, and other kinds of logic.
+Solidity is a statically-typed curly-braces programming language designed for developing smart contracts that run on the Ethereum Virtual Machine. Smart contracts are programs executed inside a peer-to-peer network where nobody has special authority over the execution. Thus they allow implementing tokens of value, ownership, voting, and other kinds of logic.
 
-When deploying contracts, you should use the latest released version of
-Solidity. This is because breaking changes, as well as new features and bug fixes are
-introduced regularly. We currently use a 0.x version
+When deploying contracts, you should use the latest released version of Solidity. This is because breaking changes and new features, and bug fixes are introduced regularly. We currently use a 0.x version
 number [to indicate this fast pace of change](https://semver.org/#spec-item-4).
 
 ## Build and Install
 
 Instructions about how to build and install the Solidity compiler can be
 found in the [Solidity documentation](https://docs.soliditylang.org/en/latest/installing-solidity.html#building-from-source).
-
 
 ## Example
 
@@ -79,10 +73,12 @@ You can find our current feature and bug priorities for forthcoming
 releases in the [projects section](https://github.com/ethereum/solidity/projects).
 
 ## Maintainers
-* [@axic](https://github.com/axic)
-* [@chriseth](https://github.com/chriseth)
+
+- [@axic](https://github.com/axic)
+- [@chriseth](https://github.com/chriseth)
 
 ## License
+
 Solidity is licensed under [GNU General Public License v3.0](LICENSE.txt).
 
 Some third-party code has its [own licensing terms](cmake/templates/license.h.in).
