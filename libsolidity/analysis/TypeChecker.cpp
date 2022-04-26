@@ -35,6 +35,7 @@
 #include <libsolutil/Algorithms.h>
 #include <libsolutil/StringUtils.h>
 #include <libsolutil/Views.h>
+#include <libsolutil/Visitor.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/predicate.hpp>
@@ -265,6 +266,11 @@ TypePointers TypeChecker::typeCheckMetaTypeFunctionAndRetrieveReturnType(Functio
 		);
 
 	return {TypeProvider::meta(dynamic_cast<TypeType const&>(*firstArgType).actualType())};
+}
+
+bool TypeChecker::visit(ImportDirective const&)
+{
+	return false;
 }
 
 void TypeChecker::endVisit(InheritanceSpecifier const& _inheritance)
@@ -659,7 +665,7 @@ void TypeChecker::visitManually(
 		if (auto const* modifierContract = dynamic_cast<ContractDefinition const*>(modifierDecl->scope()))
 			if (m_currentContract)
 			{
-				if (!contains(m_currentContract->annotation().linearizedBaseContracts, modifierContract))
+				if (!util::contains(m_currentContract->annotation().linearizedBaseContracts, modifierContract))
 					m_errorReporter.typeError(
 						9428_error,
 						_modifier.location(),
@@ -1657,19 +1663,22 @@ bool TypeChecker::visit(UnaryOperation const& _operation)
 	else
 		_operation.subExpression().accept(*this);
 	Type const* subExprType = type(_operation.subExpression());
-	Type const* t = type(_operation.subExpression())->unaryOperatorResult(op);
-	if (!t)
+	TypeResult result = type(_operation.subExpression())->unaryOperatorResult(op);
+	if (!result)
 	{
 		string description = "Unary operator " + string(TokenTraits::toString(op)) + " cannot be applied to type " + subExprType->toString();
+		if (!result.message().empty())
+			description += ". " + result.message();
 		if (modifying)
 			// Cannot just report the error, ignore the unary operator, and continue,
 			// because the sub-expression was already processed with requireLValue()
 			m_errorReporter.fatalTypeError(9767_error, _operation.location(), description);
 		else
 			m_errorReporter.typeError(4907_error, _operation.location(), description);
-		t = subExprType;
+		_operation.annotation().type = subExprType;
 	}
-	_operation.annotation().type = t;
+	else
+		_operation.annotation().type = result.get();
 	_operation.annotation().isConstant = false;
 	_operation.annotation().isPure = !modifying && *_operation.subExpression().annotation().isPure;
 	_operation.annotation().isLValue = false;
@@ -2105,57 +2114,60 @@ void TypeChecker::typeCheckABIEncodeCallFunction(FunctionCall const& _functionCa
 		return;
 	}
 
-	auto const functionPointerType = dynamic_cast<FunctionTypePointer>(type(*arguments.front()));
-
-	if (!functionPointerType)
+	FunctionType const* externalFunctionType = nullptr;
+	if (auto const functionPointerType = dynamic_cast<FunctionTypePointer>(type(*arguments.front())))
+	{
+		// this cannot be a library function, that is checked below
+		externalFunctionType = functionPointerType->asExternallyCallableFunction(false);
+		solAssert(externalFunctionType->kind() == functionPointerType->kind());
+	}
+	else
 	{
 		m_errorReporter.typeError(
 			5511_error,
 			arguments.front()->location(),
 			"Expected first argument to be a function pointer, not \"" +
-			type(*arguments.front())->canonicalName() +
+			type(*arguments.front())->toString() +
 			"\"."
 		);
 		return;
 	}
 
 	if (
-		functionPointerType->kind() != FunctionType::Kind::External &&
-		functionPointerType->kind() != FunctionType::Kind::Declaration
+		externalFunctionType->kind() != FunctionType::Kind::External &&
+		externalFunctionType->kind() != FunctionType::Kind::Declaration
 	)
 	{
 		string msg = "Expected regular external function type, or external view on public function.";
-		if (functionPointerType->kind() == FunctionType::Kind::Internal)
+		if (externalFunctionType->kind() == FunctionType::Kind::Internal)
 			msg += " Provided internal function.";
-		else if (functionPointerType->kind() == FunctionType::Kind::DelegateCall)
+		else if (externalFunctionType->kind() == FunctionType::Kind::DelegateCall)
 			msg += " Cannot use library functions for abi.encodeCall.";
-		else if (functionPointerType->kind() == FunctionType::Kind::Creation)
+		else if (externalFunctionType->kind() == FunctionType::Kind::Creation)
 			msg += " Provided creation function.";
 		else
 			msg += " Cannot use special function.";
 		SecondarySourceLocation ssl{};
 
-		if (functionPointerType->hasDeclaration())
+		if (externalFunctionType->hasDeclaration())
 		{
-			ssl.append("Function is declared here:", functionPointerType->declaration().location());
+			ssl.append("Function is declared here:", externalFunctionType->declaration().location());
 			if (
-				functionPointerType->declaration().visibility() == Visibility::Public &&
-				functionPointerType->declaration().scope() == m_currentContract
+				externalFunctionType->declaration().visibility() == Visibility::Public &&
+				externalFunctionType->declaration().scope() == m_currentContract
 			)
 				msg += " Did you forget to prefix \"this.\"?";
-			else if (contains(
+			else if (util::contains(
 				m_currentContract->annotation().linearizedBaseContracts,
-				functionPointerType->declaration().scope()
-			) && functionPointerType->declaration().scope() != m_currentContract)
+				externalFunctionType->declaration().scope()
+			) && externalFunctionType->declaration().scope() != m_currentContract)
 				msg += " Functions from base contracts have to be external.";
 		}
 
 		m_errorReporter.typeError(3509_error, arguments[0]->location(), ssl, msg);
 		return;
 	}
-
-	solAssert(!functionPointerType->takesArbitraryParameters(), "Function must have fixed parameters.");
-
+	solAssert(!externalFunctionType->takesArbitraryParameters(), "Function must have fixed parameters.");
 	// Tuples with only one component become that component
 	vector<ASTPointer<Expression const>> callArguments;
 
@@ -2168,14 +2180,14 @@ void TypeChecker::typeCheckABIEncodeCallFunction(FunctionCall const& _functionCa
 	else
 		callArguments.push_back(arguments[1]);
 
-	if (functionPointerType->parameterTypes().size() != callArguments.size())
+	if (externalFunctionType->parameterTypes().size() != callArguments.size())
 	{
 		if (tupleType)
 			m_errorReporter.typeError(
 				7788_error,
 				_functionCall.location(),
 				"Expected " +
-				to_string(functionPointerType->parameterTypes().size()) +
+				to_string(externalFunctionType->parameterTypes().size()) +
 				" instead of " +
 				to_string(callArguments.size()) +
 				" components for the tuple parameter."
@@ -2185,18 +2197,18 @@ void TypeChecker::typeCheckABIEncodeCallFunction(FunctionCall const& _functionCa
 				7515_error,
 				_functionCall.location(),
 				"Expected a tuple with " +
-				to_string(functionPointerType->parameterTypes().size()) +
+				to_string(externalFunctionType->parameterTypes().size()) +
 				" components instead of a single non-tuple parameter."
 			);
 	}
 
 	// Use min() to check as much as we can before failing fatally
-	size_t const numParameters = min(callArguments.size(), functionPointerType->parameterTypes().size());
+	size_t const numParameters = min(callArguments.size(), externalFunctionType->parameterTypes().size());
 
 	for (size_t i = 0; i < numParameters; i++)
 	{
 		Type const& argType = *type(*callArguments[i]);
-		BoolResult result = argType.isImplicitlyConvertibleTo(*functionPointerType->parameterTypes()[i]);
+		BoolResult result = argType.isImplicitlyConvertibleTo(*externalFunctionType->parameterTypes()[i]);
 		if (!result)
 			m_errorReporter.typeError(
 				5407_error,
@@ -2204,9 +2216,9 @@ void TypeChecker::typeCheckABIEncodeCallFunction(FunctionCall const& _functionCa
 				"Cannot implicitly convert component at position " +
 				to_string(i) +
 				" from \"" +
-				argType.canonicalName() +
+				argType.toString() +
 				"\" to \"" +
-				functionPointerType->parameterTypes()[i]->canonicalName() +
+				externalFunctionType->parameterTypes()[i]->toString() +
 				"\"" +
 				(result.message().empty() ?  "." : ": " + result.message())
 			);
@@ -3626,12 +3638,89 @@ void TypeChecker::endVisit(Literal const& _literal)
 
 void TypeChecker::endVisit(UsingForDirective const& _usingFor)
 {
-	if (m_currentContract->isInterface())
-		m_errorReporter.typeError(
-			9088_error,
-			_usingFor.location(),
-			"The \"using for\" directive is not allowed inside interfaces."
+	if (!_usingFor.usesBraces())
+	{
+		solAssert(_usingFor.functionsOrLibrary().size() == 1);
+		ContractDefinition const* library = dynamic_cast<ContractDefinition const*>(
+				_usingFor.functionsOrLibrary().front()->annotation().referencedDeclaration
 		);
+		solAssert(library && library->isLibrary());
+		// No type checking for libraries
+		return;
+	}
+
+	if (!_usingFor.typeName())
+	{
+		solAssert(m_errorReporter.hasErrors());
+		return;
+	}
+
+	solAssert(_usingFor.typeName()->annotation().type);
+	Type const* normalizedType = TypeProvider::withLocationIfReference(
+		DataLocation::Storage,
+		_usingFor.typeName()->annotation().type
+	);
+	solAssert(normalizedType);
+
+	if (_usingFor.global())
+	{
+		if (m_currentContract)
+			solAssert(m_errorReporter.hasErrors());
+		if (Declaration const* typeDefinition = _usingFor.typeName()->annotation().type->typeDefinition())
+		{
+			if (typeDefinition->scope() != m_currentSourceUnit)
+				m_errorReporter.typeError(
+					4117_error,
+					_usingFor.location(),
+					"Can only use \"global\" with types defined in the same source unit at file level."
+				);
+		}
+		else
+			m_errorReporter.typeError(
+				8841_error,
+				_usingFor.location(),
+				"Can only use \"global\" with user-defined types."
+			);
+	}
+
+
+	for (ASTPointer<IdentifierPath> const& path: _usingFor.functionsOrLibrary())
+	{
+		solAssert(path->annotation().referencedDeclaration);
+		FunctionDefinition const& functionDefinition =
+			dynamic_cast<FunctionDefinition const&>(*path->annotation().referencedDeclaration);
+
+		solAssert(functionDefinition.type());
+
+		if (functionDefinition.parameters().empty())
+			m_errorReporter.fatalTypeError(
+				4731_error,
+				path->location(),
+				"The function \"" + joinHumanReadable(path->path(), ".") + "\" " +
+				"does not have any parameters, and therefore cannot be bound to the type \"" +
+				(normalizedType ? normalizedType->toString(true) : "*") + "\"."
+			);
+
+		FunctionType const* functionType = dynamic_cast<FunctionType const&>(*functionDefinition.type()).asBoundFunction();
+		solAssert(functionType && functionType->selfType(), "");
+		BoolResult result = normalizedType->isImplicitlyConvertibleTo(
+			*TypeProvider::withLocationIfReference(DataLocation::Storage, functionType->selfType())
+		);
+		if (!result)
+			m_errorReporter.typeError(
+				3100_error,
+				path->location(),
+				"The function \"" + joinHumanReadable(path->path(), ".") + "\" "+
+				"cannot be bound to the type \"" + _usingFor.typeName()->annotation().type->toString() +
+				"\" because the type cannot be implicitly converted to the first argument" +
+				" of the function (\"" + functionType->selfType()->toString() + "\")" +
+				(
+					result.message().empty() ?
+					"." :
+					": " +  result.message()
+				)
+			);
+	}
 }
 
 void TypeChecker::checkErrorAndEventParameters(CallableDeclaration const& _callable)

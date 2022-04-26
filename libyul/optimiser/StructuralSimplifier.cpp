@@ -55,6 +55,30 @@ OptionalStatements replaceConstArgSwitch(Switch& _switchStmt, u256 const& _const
 		return optional<vector<Statement>>{vector<Statement>{}};
 }
 
+optional<u256> hasLiteralValue(Expression const& _expression)
+{
+	if (holds_alternative<Literal>(_expression))
+		return valueOfLiteral(std::get<Literal>(_expression));
+	else
+		return std::optional<u256>();
+}
+
+bool expressionAlwaysTrue(Expression const& _expression)
+{
+	if (std::optional<u256> value = hasLiteralValue(_expression))
+		return *value != 0;
+	else
+		return false;
+}
+
+bool expressionAlwaysFalse(Expression const& _expression)
+{
+	if (std::optional<u256> value = hasLiteralValue(_expression))
+		return *value == 0;
+	else
+		return false;
+}
+
 }
 
 void StructuralSimplifier::run(OptimiserStepContext&, Block& _ast)
@@ -69,26 +93,31 @@ void StructuralSimplifier::operator()(Block& _block)
 
 void StructuralSimplifier::simplify(std::vector<yul::Statement>& _statements)
 {
-	util::GenericVisitor visitor{
-		util::VisitorFallback<OptionalStatements>{},
-		[&](If& _ifStmt) -> OptionalStatements {
-			if (expressionAlwaysTrue(*_ifStmt.condition))
-				return {std::move(_ifStmt.body.statements)};
-			else if (expressionAlwaysFalse(*_ifStmt.condition))
-				return {vector<Statement>{}};
-			return {};
-		},
-		[&](Switch& _switchStmt) -> OptionalStatements {
-			if (std::optional<u256> const constExprVal = hasLiteralValue(*_switchStmt.expression))
-				return replaceConstArgSwitch(_switchStmt, constExprVal.value());
-			return {};
-		},
-		[&](ForLoop& _forLoop) -> OptionalStatements {
-			if (expressionAlwaysFalse(*_forLoop.condition))
-				return {std::move(_forLoop.pre.statements)};
-			return {};
-		}
+	// Explicit local variables ifLambda, switchLambda, forLoopLambda are created to avoid MSVC C++17 Debug test crash
+	// (Run-Time Check Failure #2 - Stack around the variable '....' was corrupted).
+	// As soon as the issue is fixed, this workaround can be removed.
+	auto ifLambda = [&](If& _ifStmt) -> OptionalStatements
+	{
+		if (expressionAlwaysTrue(*_ifStmt.condition))
+			return {std::move(_ifStmt.body.statements)};
+		else if (expressionAlwaysFalse(*_ifStmt.condition))
+			return {vector<Statement>{}};
+		return {};
 	};
+	auto switchLambda = [&](Switch& _switchStmt) -> OptionalStatements
+	{
+		if (std::optional<u256> const constExprVal = hasLiteralValue(*_switchStmt.expression))
+			return replaceConstArgSwitch(_switchStmt, constExprVal.value());
+		return {};
+	};
+	auto forLoopLambda = [&](ForLoop& _forLoop) -> OptionalStatements
+	{
+		if (expressionAlwaysFalse(*_forLoop.condition))
+			return {std::move(_forLoop.pre.statements)};
+		return {};
+	};
+
+	util::GenericVisitor visitor{util::VisitorFallback<OptionalStatements>{}, ifLambda, switchLambda, forLoopLambda};
 
 	util::iterateReplacing(
 		_statements,
@@ -102,28 +131,4 @@ void StructuralSimplifier::simplify(std::vector<yul::Statement>& _statements)
 			return result;
 		}
 	);
-}
-
-bool StructuralSimplifier::expressionAlwaysTrue(Expression const& _expression)
-{
-	if (std::optional<u256> value = hasLiteralValue(_expression))
-		return *value != 0;
-	else
-		return false;
-}
-
-bool StructuralSimplifier::expressionAlwaysFalse(Expression const& _expression)
-{
-	if (std::optional<u256> value = hasLiteralValue(_expression))
-		return *value == 0;
-	else
-		return false;
-}
-
-std::optional<u256> StructuralSimplifier::hasLiteralValue(Expression const& _expression) const
-{
-	if (holds_alternative<Literal>(_expression))
-		return valueOfLiteral(std::get<Literal>(_expression));
-	else
-		return std::optional<u256>();
 }

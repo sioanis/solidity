@@ -25,7 +25,7 @@
 #include <libsolidity/interface/FileReader.h>
 #include <libsolidity/interface/ImportRemapper.h>
 
-#include <libyul/AssemblyStack.h>
+#include <libyul/YulStack.h>
 
 #include <liblangutil/DebugInfoSelection.h>
 #include <liblangutil/EVMVersion.h>
@@ -182,7 +182,7 @@ struct CommandLineOptions
 		boost::filesystem::path dir;
 		bool overwriteFiles = false;
 		langutil::EVMVersion evmVersion;
-		bool experimentalViaIR = false;
+		bool viaIR = false;
 		RevertStrings revertStrings = RevertStrings::Default;
 		std::optional<langutil::DebugInfoSelection> debugInfoSelection;
 		CompilerStack::State stopAfter = CompilerStack::State::CompilationSuccessful;
@@ -190,8 +190,8 @@ struct CommandLineOptions
 
 	struct
 	{
-		yul::AssemblyStack::Machine targetMachine = yul::AssemblyStack::Machine::EVM;
-		yul::AssemblyStack::Language inputLanguage = yul::AssemblyStack::Language::StrictAssembly;
+		yul::YulStack::Machine targetMachine = yul::YulStack::Machine::EVM;
+		yul::YulStack::Language inputLanguage = yul::YulStack::Language::StrictAssembly;
 	} assembly;
 
 	struct

@@ -37,16 +37,6 @@ void Rematerialiser::run(Dialect const& _dialect, Block& _ast, set<YulString> _v
 	Rematerialiser{_dialect, _ast, std::move(_varsToAlwaysRematerialize), _onlySelectedVariables}(_ast);
 }
 
-void Rematerialiser::run(
-	Dialect const& _dialect,
-	FunctionDefinition& _function,
-	set<YulString> _varsToAlwaysRematerialize,
-	bool _onlySelectedVariables
-)
-{
-	Rematerialiser{_dialect, _function, std::move(_varsToAlwaysRematerialize), _onlySelectedVariables}(_function);
-}
-
 Rematerialiser::Rematerialiser(
 	Dialect const& _dialect,
 	Block& _ast,
@@ -60,35 +50,21 @@ Rematerialiser::Rematerialiser(
 {
 }
 
-Rematerialiser::Rematerialiser(
-	Dialect const& _dialect,
-	FunctionDefinition& _function,
-	set<YulString> _varsToAlwaysRematerialize,
-	bool _onlySelectedVariables
-):
-	DataFlowAnalyzer(_dialect),
-	m_referenceCounts(ReferencesCounter::countReferences(_function)),
-	m_varsToAlwaysRematerialize(std::move(_varsToAlwaysRematerialize)),
-	m_onlySelectedVariables(_onlySelectedVariables)
-{
-}
-
 void Rematerialiser::visit(Expression& _e)
 {
 	if (holds_alternative<Identifier>(_e))
 	{
 		Identifier& identifier = std::get<Identifier>(_e);
 		YulString name = identifier.name;
-		if (m_value.count(name))
+		if (AssignedValue const* value = variableValue(name))
 		{
-			assertThrow(m_value.at(name).value, OptimizerException, "");
-			AssignedValue const& value = m_value.at(name);
+			assertThrow(value->value, OptimizerException, "");
 			size_t refs = m_referenceCounts[name];
-			size_t cost = CodeCost::codeCost(m_dialect, *value.value);
+			size_t cost = CodeCost::codeCost(m_dialect, *value->value);
 			if (
 				(
 					!m_onlySelectedVariables && (
-						(refs <= 1 && value.loopDepth == m_loopDepth) ||
+						(refs <= 1 && value->loopDepth == m_loopDepth) ||
 						cost == 0 ||
 						(refs <= 5 && cost <= 1 && m_loopDepth == 0)
 					)
@@ -96,13 +72,14 @@ void Rematerialiser::visit(Expression& _e)
 			)
 			{
 				assertThrow(m_referenceCounts[name] > 0, OptimizerException, "");
-				if (ranges::all_of(m_references[name], [&](auto const& ref) { return inScope(ref); }))
+				auto variableReferences = references(name);
+				if (!variableReferences || ranges::all_of(*variableReferences, [&](auto const& ref) { return inScope(ref); }))
 				{
 					// update reference counts
 					m_referenceCounts[name]--;
-					for (auto const& ref: ReferencesCounter::countReferences(*value.value))
+					for (auto const& ref: ReferencesCounter::countReferences(*value->value))
 						m_referenceCounts[ref.first] += ref.second;
-					_e = (ASTCopier{}).translate(*value.value);
+					_e = (ASTCopier{}).translate(*value->value);
 				}
 			}
 		}
@@ -116,12 +93,11 @@ void LiteralRematerialiser::visit(Expression& _e)
 	{
 		Identifier& identifier = std::get<Identifier>(_e);
 		YulString name = identifier.name;
-		if (m_value.count(name))
+		if (AssignedValue const* value = variableValue(name))
 		{
-			Expression const* value = m_value.at(name).value;
-			assertThrow(value, OptimizerException, "");
-			if (holds_alternative<Literal>(*value))
-				_e = *value;
+			assertThrow(value->value, OptimizerException, "");
+			if (holds_alternative<Literal>(*value->value))
+				_e = *value->value;
 		}
 	}
 	DataFlowAnalyzer::visit(_e);

@@ -42,13 +42,12 @@ function gnosis_safe_test
     local config_file="hardhat.config.ts"
     local config_var=userConfig
 
-    local compile_only_presets=(
-        ir-optimize-evm+yul        # Compiles but tests fail. See https://github.com/nomiclabs/hardhat/issues/2115
-    )
+    local compile_only_presets=()
     local settings_presets=(
         "${compile_only_presets[@]}"
         #ir-no-optimize            # Compilation fails with "YulException: Variable var_call_430_mpos is 1 slot(s) too deep inside the stack."
         #ir-optimize-evm-only      # Compilation fails with "YulException: Variable var_call_430_mpos is 1 slot(s) too deep inside the stack."
+        ir-optimize-evm+yul
         legacy-no-optimize
         legacy-optimize-evm-only
         legacy-optimize-evm+yul
@@ -70,12 +69,21 @@ function gnosis_safe_test
     # TODO: Remove this when Hardhat implements them (https://github.com/nomiclabs/hardhat/issues/2051).
     sed -i "s|\(it\)\(('should revert if called directly', async () => {\)|\1.skip\2|g" test/handlers/CompatibilityFallbackHandler.spec.ts
 
+    # Disable tests that won't pass on the ir presets due to Hardhat heuristics. Note that this also disables
+    # them for other presets but that's fine - we want same code run for benchmarks to be comparable.
+    # TODO: Remove this when Hardhat adjusts heuristics for IR (https://github.com/nomiclabs/hardhat/issues/2115).
+    sed -i "s|\(it\)\(('should not allow to call setup on singleton'\)|\1.skip\2|g" test/core/GnosisSafe.Setup.spec.ts
+
     neutralize_package_lock
     neutralize_package_json_hooks
     force_hardhat_compiler_binary "$config_file" "$BINARY_TYPE" "$BINARY_PATH"
     force_hardhat_compiler_settings "$config_file" "$(first_word "$SELECTED_PRESETS")" "$config_var"
     npm install
     npm install hardhat-gas-reporter
+
+    # With ethers.js 5.6.2 many tests for revert messages fail.
+    # TODO: Remove when https://github.com/ethers-io/ethers.js/discussions/2849 is resolved.
+    npm install ethers@5.6.1
 
     replace_version_pragmas
     [[ $BINARY_TYPE == solcjs ]] && force_solc_modules "${DIR}/solc/dist"

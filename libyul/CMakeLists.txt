@@ -30,8 +30,8 @@ add_library(yul
 	AsmParser.h
 	AsmPrinter.cpp
 	AsmPrinter.h
-	AssemblyStack.h
-	AssemblyStack.cpp
+	YulStack.h
+	YulStack.cpp
 	CompilabilityChecker.cpp
 	CompilabilityChecker.h
 	ControlFlowSideEffects.h
@@ -179,6 +179,8 @@ add_library(yul
 	optimiser/UnusedAssignEliminator.h
 	optimiser/UnusedStoreBase.cpp
 	optimiser/UnusedStoreBase.h
+	optimiser/UnusedStoreEliminator.cpp
+	optimiser/UnusedStoreEliminator.h
 	optimiser/Rematerialiser.cpp
 	optimiser/Rematerialiser.h
 	optimiser/SMTSolver.cpp

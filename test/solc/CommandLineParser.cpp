@@ -120,6 +120,7 @@ BOOST_AUTO_TEST_CASE(cli_mode_options)
 			"--output-dir=/tmp/out",
 			"--overwrite",
 			"--evm-version=spuriousDragon",
+			"--via-ir",
 			"--experimental-via-ir",
 			"--revert-strings=strip",
 			"--debug-info=location",
@@ -175,7 +176,7 @@ BOOST_AUTO_TEST_CASE(cli_mode_options)
 		expectedOptions.output.dir = "/tmp/out";
 		expectedOptions.output.overwriteFiles = true;
 		expectedOptions.output.evmVersion = EVMVersion::spuriousDragon();
-		expectedOptions.output.experimentalViaIR = true;
+		expectedOptions.output.viaIR = true;
 		expectedOptions.output.revertStrings = RevertStrings::Strip;
 		expectedOptions.output.debugInfoSelection = DebugInfoSelection::fromString("location");
 		expectedOptions.formatting.json = JsonFormat{JsonFormat::Pretty, 7};
@@ -223,25 +224,32 @@ BOOST_AUTO_TEST_CASE(cli_mode_options)
 	}
 }
 
+BOOST_AUTO_TEST_CASE(via_ir_options)
+{
+	BOOST_TEST(!parseCommandLine({"solc", "contract.sol"}).output.viaIR);
+	for (string viaIrOption: {"--via-ir", "--experimental-via-ir"})
+		BOOST_TEST(parseCommandLine({"solc", viaIrOption, "contract.sol"}).output.viaIR);
+}
+
 BOOST_AUTO_TEST_CASE(assembly_mode_options)
 {
-	static vector<tuple<vector<string>, AssemblyStack::Machine, AssemblyStack::Language>> const allowedCombinations = {
-		{{"--machine=ewasm", "--yul-dialect=ewasm", "--assemble"}, AssemblyStack::Machine::Ewasm, AssemblyStack::Language::Ewasm},
-		{{"--machine=ewasm", "--yul-dialect=ewasm", "--yul"}, AssemblyStack::Machine::Ewasm, AssemblyStack::Language::Ewasm},
-		{{"--machine=ewasm", "--yul-dialect=ewasm", "--strict-assembly"}, AssemblyStack::Machine::Ewasm, AssemblyStack::Language::Ewasm},
-		{{"--machine=ewasm", "--yul-dialect=evm", "--assemble"}, AssemblyStack::Machine::Ewasm, AssemblyStack::Language::StrictAssembly},
-		{{"--machine=ewasm", "--yul-dialect=evm", "--yul"}, AssemblyStack::Machine::Ewasm, AssemblyStack::Language::StrictAssembly},
-		{{"--machine=ewasm", "--yul-dialect=evm", "--strict-assembly"}, AssemblyStack::Machine::Ewasm, AssemblyStack::Language::StrictAssembly},
-		{{"--machine=ewasm", "--strict-assembly"}, AssemblyStack::Machine::Ewasm, AssemblyStack::Language::Ewasm},
-		{{"--machine=evm", "--yul-dialect=evm", "--assemble"}, AssemblyStack::Machine::EVM, AssemblyStack::Language::StrictAssembly},
-		{{"--machine=evm", "--yul-dialect=evm", "--yul"}, AssemblyStack::Machine::EVM, AssemblyStack::Language::StrictAssembly},
-		{{"--machine=evm", "--yul-dialect=evm", "--strict-assembly"}, AssemblyStack::Machine::EVM, AssemblyStack::Language::StrictAssembly},
-		{{"--machine=evm", "--assemble"}, AssemblyStack::Machine::EVM, AssemblyStack::Language::Assembly},
-		{{"--machine=evm", "--yul"}, AssemblyStack::Machine::EVM, AssemblyStack::Language::Yul},
-		{{"--machine=evm", "--strict-assembly"}, AssemblyStack::Machine::EVM, AssemblyStack::Language::StrictAssembly},
-		{{"--assemble"}, AssemblyStack::Machine::EVM, AssemblyStack::Language::Assembly},
-		{{"--yul"}, AssemblyStack::Machine::EVM, AssemblyStack::Language::Yul},
-		{{"--strict-assembly"}, AssemblyStack::Machine::EVM, AssemblyStack::Language::StrictAssembly},
+	static vector<tuple<vector<string>, YulStack::Machine, YulStack::Language>> const allowedCombinations = {
+		{{"--machine=ewasm", "--yul-dialect=ewasm", "--assemble"}, YulStack::Machine::Ewasm, YulStack::Language::Ewasm},
+		{{"--machine=ewasm", "--yul-dialect=ewasm", "--yul"}, YulStack::Machine::Ewasm, YulStack::Language::Ewasm},
+		{{"--machine=ewasm", "--yul-dialect=ewasm", "--strict-assembly"}, YulStack::Machine::Ewasm, YulStack::Language::Ewasm},
+		{{"--machine=ewasm", "--yul-dialect=evm", "--assemble"}, YulStack::Machine::Ewasm, YulStack::Language::StrictAssembly},
+		{{"--machine=ewasm", "--yul-dialect=evm", "--yul"}, YulStack::Machine::Ewasm, YulStack::Language::StrictAssembly},
+		{{"--machine=ewasm", "--yul-dialect=evm", "--strict-assembly"}, YulStack::Machine::Ewasm, YulStack::Language::StrictAssembly},
+		{{"--machine=ewasm", "--strict-assembly"}, YulStack::Machine::Ewasm, YulStack::Language::Ewasm},
+		{{"--machine=evm", "--yul-dialect=evm", "--assemble"}, YulStack::Machine::EVM, YulStack::Language::StrictAssembly},
+		{{"--machine=evm", "--yul-dialect=evm", "--yul"}, YulStack::Machine::EVM, YulStack::Language::StrictAssembly},
+		{{"--machine=evm", "--yul-dialect=evm", "--strict-assembly"}, YulStack::Machine::EVM, YulStack::Language::StrictAssembly},
+		{{"--machine=evm", "--assemble"}, YulStack::Machine::EVM, YulStack::Language::Assembly},
+		{{"--machine=evm", "--yul"}, YulStack::Machine::EVM, YulStack::Language::Yul},
+		{{"--machine=evm", "--strict-assembly"}, YulStack::Machine::EVM, YulStack::Language::StrictAssembly},
+		{{"--assemble"}, YulStack::Machine::EVM, YulStack::Language::Assembly},
+		{{"--yul"}, YulStack::Machine::EVM, YulStack::Language::Yul},
+		{{"--strict-assembly"}, YulStack::Machine::EVM, YulStack::Language::StrictAssembly},
 	};
 
 	for (auto const& [assemblyOptions, expectedMachine, expectedLanguage]: allowedCombinations)
@@ -294,7 +302,7 @@ BOOST_AUTO_TEST_CASE(assembly_mode_options)
 			"--ewasm-ir",
 		};
 		commandLine += assemblyOptions;
-		if (expectedLanguage == AssemblyStack::Language::StrictAssembly || expectedLanguage == AssemblyStack::Language::Ewasm)
+		if (expectedLanguage == YulStack::Language::StrictAssembly || expectedLanguage == YulStack::Language::Ewasm)
 			commandLine += vector<string>{
 				"--optimize",
 				"--optimize-runs=1000",
@@ -333,7 +341,7 @@ BOOST_AUTO_TEST_CASE(assembly_mode_options)
 		expectedOptions.compiler.outputs.irOptimized = true;
 		expectedOptions.compiler.outputs.ewasm = true;
 		expectedOptions.compiler.outputs.ewasmIR = true;
-		if (expectedLanguage == AssemblyStack::Language::StrictAssembly || expectedLanguage == AssemblyStack::Language::Ewasm)
+		if (expectedLanguage == YulStack::Language::StrictAssembly || expectedLanguage == YulStack::Language::Ewasm)
 		{
 			expectedOptions.optimizer.enabled = true;
 			expectedOptions.optimizer.yulSteps = "agf";
@@ -415,7 +423,8 @@ BOOST_AUTO_TEST_CASE(invalid_options_input_modes_combinations)
 	map<string, vector<string>> invalidOptionInputModeCombinations = {
 		// TODO: This should eventually contain all options.
 		{"--error-recovery", {"--assemble", "--yul", "--strict-assembly", "--standard-json", "--link"}},
-		{"--experimental-via-ir", {"--assemble", "--yul", "--strict-assembly", "--standard-json", "--link"}}
+		{"--experimental-via-ir", {"--assemble", "--yul", "--strict-assembly", "--standard-json", "--link"}},
+		{"--via-ir", {"--assemble", "--yul", "--strict-assembly", "--standard-json", "--link"}}
 	};
 
 	for (auto const& [optionName, inputModes]: invalidOptionInputModeCombinations)

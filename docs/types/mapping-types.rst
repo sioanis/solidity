@@ -4,12 +4,12 @@
 Mapping Types
 =============
 
-Mapping types use the syntax ``mapping(_KeyType => _ValueType)`` and variables
-of mapping type are declared using the syntax ``mapping(_KeyType => _ValueType) _VariableName``.
-The ``_KeyType`` can be any
+Mapping types use the syntax ``mapping(KeyType => ValueType)`` and variables
+of mapping type are declared using the syntax ``mapping(KeyType => ValueType) VariableName``.
+The ``KeyType`` can be any
 built-in value type, ``bytes``, ``string``, or any contract or enum type. Other user-defined
 or complex types, such as mappings, structs or array types are not allowed.
-``_ValueType`` can be any type, including mappings, arrays and structs.
+``ValueType`` can be any type, including mappings, arrays and structs.
 
 You can think of mappings as `hash tables <https://en.wikipedia.org/wiki/Hash_table>`_, which are virtually initialised
 such that every possible key exists and is mapped to a value whose
@@ -29,10 +29,10 @@ of contract functions that are publicly visible.
 These restrictions are also true for arrays and structs that contain mappings.
 
 You can mark state variables of mapping type as ``public`` and Solidity creates a
-:ref:`getter <visibility-and-getters>` for you. The ``_KeyType`` becomes a parameter for the getter.
-If ``_ValueType`` is a value type or a struct, the getter returns ``_ValueType``.
-If ``_ValueType`` is an array or a mapping, the getter has one parameter for
-each ``_KeyType``, recursively.
+:ref:`getter <visibility-and-getters>` for you. The ``KeyType`` becomes a parameter for the getter.
+If ``ValueType`` is a value type or a struct, the getter returns ``ValueType``.
+If ``ValueType`` is an array or a mapping, the getter has one parameter for
+each ``KeyType``, recursively.
 
 In the example below, the ``MappingExample`` contract defines a public ``balances``
 mapping, with the key type an ``address``, and a value type a ``uint``, mapping
@@ -119,7 +119,7 @@ Iterable Mappings
 You cannot iterate over mappings, i.e. you cannot enumerate their keys.
 It is possible, though, to implement a data structure on
 top of them and iterate over that. For example, the code below implements an
-``IterableMapping`` library that the ``User`` contract then adds data too, and
+``IterableMapping`` library that the ``User`` contract then adds data to, and
 the ``sum`` function iterates over to sum all the values.
 
 .. code-block:: solidity
