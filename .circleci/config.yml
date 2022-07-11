@@ -9,20 +9,20 @@ version: 2.1
 parameters:
   ubuntu-2004-docker-image:
     type: string
-    # solbuildpackpusher/solidity-buildpack-deps:ubuntu2004-11
-    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:9928dc357829e475e8729c62a1c2d495dbb41cb9fe4c4b115a5568be8e1ed69e"
+    # solbuildpackpusher/solidity-buildpack-deps:ubuntu2004-13
+    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:aa64242ecba4f040a839eadfaf20e8489cf93d1cb96ab90df2b240cdbbfe7f7c"
   ubuntu-2004-clang-docker-image:
     type: string
-    # solbuildpackpusher/solidity-buildpack-deps:ubuntu2004.clang-11
-    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:72fb9574c90e8ef908dce4c9dd9788ff4de708b504d970cd9146eed8911c313e"
+    # solbuildpackpusher/solidity-buildpack-deps:ubuntu2004.clang-13
+    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:caaf8d42aaf07397d1540e570f096a4fb1ef11fda7da3f1141d8852ec8322a9e"
   ubuntu-1604-clang-ossfuzz-docker-image:
     type: string
-    # solbuildpackpusher/solidity-buildpack-deps:ubuntu1604.clang.ossfuzz-16
-    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:fe54d8e5409827d43edb0dc8ad0d9e4232a675050ceb271c873b73e5ee267938"
+    # solbuildpackpusher/solidity-buildpack-deps:ubuntu1604.clang.ossfuzz-18
+    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:048002d71a1f86f83dedb79dd057760b752256c75646ba5ad5c1bbe92e1695aa"
   emscripten-docker-image:
     type: string
-    # solbuildpackpusher/solidity-buildpack-deps:emscripten-9
-    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:d51534dfdd05ece86f69ed7beafd68c15b88606da00a4b7fe2873ccfbd0dce24"
+    # solbuildpackpusher/solidity-buildpack-deps:emscripten-11
+    default: "solbuildpackpusher/solidity-buildpack-deps@sha256:0ad7c65e8c54d926ba9cb80d56246e4fc49f9284ad5188aaaa4834f46ab0c315"
   evm-version:
     type: string
     default: london
@@ -36,7 +36,7 @@ commands:
     parameters:
       event:
         type: enum
-        enum: ["failure", "success"]
+        enum: ["failure", "success", "release"]
       condition:
         type: string
     steps:
@@ -58,6 +58,10 @@ commands:
 
             [[ "<< parameters.event >>" == "failure" ]] && message=" ❌ [${workflow_name}] Job ${job} failed on **${CIRCLE_BRANCH}**. Please see [build ${CIRCLE_BUILD_NUM}](${CIRCLE_BUILD_URL}) for details."
             [[ "<< parameters.event >>" == "success" ]] && message=" ✅ [${workflow_name}] Job ${job} succeeded on **${CIRCLE_BRANCH}**. Please see [build ${CIRCLE_BUILD_NUM}](${CIRCLE_BUILD_URL}) for details."
+            [[ "<< parameters.event >>" == "release" ]] && message=" 📦 Release binaries for version **${CIRCLE_TAG}** are ready and attached as artifacts to [build ${CIRCLE_BUILD_NUM}](${CIRCLE_BUILD_URL}). **Please make sure the whole workflow succeeded before using them.**"
+
+            # The release notification only makes sense on tagged commits. If the commit is untagged, just bail out.
+            [[ "<< parameters.event >>" == "release" ]] && { [[ $CIRCLE_TAG != "" ]] || { echo "Not a tagged commit - notification skipped."; exit 0; } }
 
             curl "https://api.gitter.im/v1/rooms/${GITTER_NOTIFY_ROOM_ID}/chatMessages" \
               --request POST \
@@ -79,6 +83,13 @@ commands:
     steps:
       - gitter_notify_unless_pr:
           event: success
+          condition: on_success
+
+  gitter_notify_release_unless_pr:
+    description: "Posts a release notification to the main room on Gitter (if not running on a PR)."
+    steps:
+      - gitter_notify_unless_pr:
+          event: release
           condition: on_success
 
 defaults:
@@ -211,7 +222,7 @@ defaults:
             command: pip install --user deepdiff colorama
         - run:
             name: Executing solc LSP test suite
-            command: ./test/lsp.py ./build/solc/solc
+            command: ./test/lsp.py ./build/solc/solc --non-interactive
         - gitter_notify_failure_unless_pr
 
   - steps_build: &steps_build
@@ -418,6 +429,13 @@ defaults:
         tags:
           only: /.*/
 
+  - workflow_trigger_on_releases: &workflow_trigger_on_releases
+      filters:
+        tags:
+          only: /^v.*/
+        branches:
+          ignore: /.*/
+
   - workflow_ubuntu2004: &workflow_ubuntu2004
       <<: *workflow_trigger_on_tags
       requires:
@@ -588,6 +606,20 @@ defaults:
       project: brink
       binary_type: native
       nodejs_version: '16'
+  - job_native_test_ext_chainlink: &job_native_test_ext_chainlink
+      <<: *workflow_ubuntu2004_static
+      name: t_native_test_ext_chainlink
+      project: chainlink
+      binary_type: native
+      nodejs_version: '16'
+      resource_class: large # Tests run out of memory on a smaller machine
+  - job_native_test_ext_gp2: &job_native_test_ext_gp2
+      <<: *workflow_ubuntu2004_static
+      name: t_native_test_ext_gp2
+      project: gp2
+      binary_type: native
+      # NOTE: Tests crash on nodejs 17: "Error: error:0308010C:digital envelope routines::unsupported"
+      nodejs_version: '16'
   - job_ems_test_ext_colony: &job_ems_test_ext_colony
       <<: *workflow_emscripten
       name: t_ems_test_ext_colony
@@ -672,9 +704,17 @@ jobs:
           name: Install pip
           command: apt -q update && apt install -y python3-pip
       - run:
-          name: Install pylint
-          command: python3 -m pip install pylint z3-solver pygments-lexer-solidity parsec tabulate deepdiff colorama
-          # also z3-solver, parsec and tabulate to make sure pylint knows about this module, pygments-lexer-solidity for docs
+          name: Install pylint and dependencies of the scripts that will be linted
+          command: python3 -m pip install
+            pylint
+            z3-solver
+            pygments-lexer-solidity
+            parsec
+            tabulate
+            deepdiff
+            colorama
+            requests
+      - run: pylint --version
       - run:
           name: Linting Python Scripts
           command: ./scripts/pylint_all.py
@@ -990,7 +1030,7 @@ jobs:
       - gitter_notify_failure_unless_pr
 
   t_ubu_soltest_all: &t_ubu_soltest_all
-    <<: *base_ubuntu2004
+    <<: *base_ubuntu2004_large
     parallelism: 50
     <<: *steps_soltest_all
 
@@ -1016,16 +1056,6 @@ jobs:
       - when:
           condition: true
           <<: *steps_soltest
-
-  t_ubu_soltest_enforce_yul: &t_ubu_soltest_enforce_yul
-    <<: *base_ubuntu2004
-    parallelism: 20
-    environment:
-      EVM: << pipeline.parameters.evm-version >>
-      SOLTEST_FLAGS: --enforce-via-yul
-      OPTIMIZE: 0
-      TERM: xterm
-    <<: *steps_soltest
 
   t_ubu_clang_soltest: &t_ubu_clang_soltest
     <<: *base_ubuntu2004_clang
@@ -1220,15 +1250,69 @@ jobs:
       - attach_workspace:
           at: .
       - run:
+          name: Install dependencies of helper scripts
+          command: |
+            sudo apt update
+            sudo apt install python3-pip --assume-yes --no-install-recommends
+            python3 -m pip install requests --user
+      - run:
           name: Combine benchmark reports
           command: cat reports/externalTests/benchmark-*.json | scripts/externalTests/merge_benchmarks.sh > reports/externalTests/all-benchmarks.json
       - run:
           name: Summarize reports
           command: cat reports/externalTests/all-benchmarks.json | scripts/externalTests/summarize_benchmarks.sh > reports/externalTests/summarized-benchmarks.json
+      - run:
+          name: Download reports from base branch
+          command: |
+            if [[ $CIRCLE_PULL_REQUEST != "" ]]; then
+              mkdir reports/externalTests/base-branch/
+              cd reports/externalTests/base-branch/
+
+              pr_id=$(echo "$CIRCLE_PULL_REQUEST" | sed 's|\(.*\)\/||')
+              scripts_dir=../../../scripts
+
+              # Our main goal here is to provide new benchmarks, the diff is optional. When benchmarks from
+              # the previous run are not available for whatever reason, we still succeed and just skip the diff.
+              # download_benchmarks.py exits with status 2 in that case.
+              if "${scripts_dir}/externalTests/download_benchmarks.py" --base-of-pr "$pr_id" || [[ $? == 2 ]]; then
+                echo 'export SKIP_BENCHMARK_DIFF=true' >> $BASH_ENV
+              fi
+            fi
+      - run:
+          name: Diff benchmarks
+          command: |
+            if [[ $CIRCLE_PULL_REQUEST != "" && $SKIP_BENCHMARK_DIFF != "true" ]]; then
+              cd reports/externalTests/
+              mkdir diff/
+              scripts_dir=../../scripts
+
+              "${scripts_dir}/externalTests/benchmark_diff.py" table \
+                --output-format markdown \
+                --style humanized \
+                base-branch/summarized-benchmarks-*.json \
+                summarized-benchmarks.json > diff/benchmark-diff-summarized-table-markdown-humanized.md
+              "${scripts_dir}/externalTests/benchmark_diff.py" table \
+                --output-format markdown \
+                --style absolute \
+                base-branch/summarized-benchmarks-*.json \
+                summarized-benchmarks.json > diff/benchmark-diff-summarized-table-markdown-absolute.md
+              "${scripts_dir}/externalTests/benchmark_diff.py" inplace \
+                --style absolute \
+                base-branch/summarized-benchmarks-*.json \
+                summarized-benchmarks.json > diff/benchmark-diff-summarized-inplace-absolute.md
+              "${scripts_dir}/externalTests/benchmark_diff.py" inplace \
+                --style absolute \
+                base-branch/all-benchmarks-*.json \
+                all-benchmarks.json > diff/benchmark-diff-all-table-inplace-absolute.md
+            fi
       - store_artifacts:
           path: reports/externalTests/all-benchmarks.json
       - store_artifacts:
           path: reports/externalTests/summarized-benchmarks.json
+      - store_artifacts:
+          path: reports/externalTests/diff/
+      - store_artifacts:
+          path: reports/externalTests/base-branch/
 
   b_win: &b_win
     <<: *base_win_powershell_large
@@ -1280,6 +1364,15 @@ jobs:
       - run:
           name: "Run soltest"
           command: .circleci/soltest.ps1
+      - run:
+          name: Install LSP test dependencies
+          command: python -m pip install --user deepdiff colorama
+      - run:
+          name: Inspect lsp.py
+          command: Get-Content ./test/lsp.py
+      - run:
+          name: Executing solc LSP test suite
+          command: python ./test/lsp.py .\build\solc\Release\solc.exe --non-interactive
       - store_test_results: *store_test_results
       - store_artifacts: *artifacts_test_results
       - gitter_notify_failure_unless_pr
@@ -1407,6 +1500,47 @@ jobs:
           path: all-bytecode-reports.zip
       - gitter_notify_failure_unless_pr
 
+  c_release_binaries:
+    <<: *base_ubuntu2004
+    steps:
+      - checkout
+      - attach_workspace:
+          at: workspace
+      - run:
+          name: Gather and rename binaries from dependent jobs
+          command: |
+            mkdir github/
+            cp workspace/solc/solc             github/solc-static-linux
+            cp workspace/build/solc/solc       github/solc-macos
+            cp workspace/solc/Release/solc.exe github/solc-windows.exe
+            cp workspace/soljson.js            github/soljson.js
+
+            cd github/
+            tar --create --file ../github-binaries.tar *
+      - store_artifacts:
+          path: github-binaries.tar
+      - run:
+          name: Rename binaries to solc-bin naming convention
+          command: |
+            full_version=$(
+              github/solc-static-linux --version |
+              sed -En 's/^Version: ([0-9.]+.*\+commit\.[0-9a-f]+(\.mod)?).*$/\1/p'
+            )
+
+            mkdir -p solc-bin/{linux-amd64,macosx-amd64,windows-amd64,bin}
+
+            mv github/solc-static-linux "solc-bin/linux-amd64/solc-linux-amd64-v${full_version}"
+            mv github/solc-macos        "solc-bin/macosx-amd64/solc-macosx-amd64-v${full_version}"
+            mv github/solc-windows.exe  "solc-bin/windows-amd64/solc-windows-amd64-v${full_version}.exe"
+            mv github/soljson.js        "solc-bin/bin/soljson-v${full_version}.js"
+
+            cd solc-bin/
+            tar --create --file ../solc-bin-binaries.tar *
+      - store_artifacts:
+          path: solc-bin-binaries.tar
+      - gitter_notify_failure_unless_pr
+      - gitter_notify_release_unless_pr
+
 workflows:
   version: 2
 
@@ -1447,7 +1581,6 @@ workflows:
       - t_ubu_cli: *workflow_ubuntu2004
       - t_ubu_locale: *workflow_ubuntu2004
       - t_ubu_soltest_all: *workflow_ubuntu2004
-      - t_ubu_soltest_enforce_yul: *workflow_ubuntu2004
       - b_ubu_clang: *workflow_trigger_on_tags
       - t_ubu_clang_soltest: *workflow_ubuntu2004_clang
       - t_ubu_lsp: *workflow_ubuntu2004
@@ -1477,6 +1610,8 @@ workflows:
       - t_ems_ext: *job_native_test_ext_prb_math
       - t_ems_ext: *job_native_test_ext_elementfi
       - t_ems_ext: *job_native_test_ext_brink
+      - t_ems_ext: *job_native_test_ext_chainlink
+      - t_ems_ext: *job_native_test_ext_gp2
 
       - c_ext_benchmarks:
           <<: *workflow_trigger_on_tags
@@ -1495,6 +1630,8 @@ workflows:
             - t_native_test_ext_prb_math
             - t_native_test_ext_elementfi
             - t_native_test_ext_brink
+            - t_native_test_ext_chainlink
+            - t_native_test_ext_gp2
 
       # Windows build and tests
       - b_win: *workflow_trigger_on_tags
@@ -1526,6 +1663,15 @@ workflows:
             - b_bytecode_win
             - b_bytecode_osx
             - b_bytecode_ems
+
+      # Final artifacts
+      - c_release_binaries:
+          <<: *workflow_trigger_on_releases
+          requires:
+            - b_ubu_static
+            - b_osx
+            - b_win_release
+            - b_ems
 
   nightly:
 

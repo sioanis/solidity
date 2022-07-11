@@ -33,6 +33,7 @@
 namespace solidity::lsp
 {
 
+class RenameSymbol;
 enum class ErrorCode;
 
 /**
@@ -60,7 +61,7 @@ public:
 	FileRepository& fileRepository() noexcept { return m_fileRepository; }
 	Transport& client() noexcept { return m_client; }
 	frontend::ASTNode const* astNodeAtSourceLocation(std::string const& _sourceUnitName, langutil::LineColumn const& _filePos);
-	langutil::CharStreamProvider const& charStreamProvider() const noexcept { return m_compilerStack; }
+	frontend::CompilerStack const& compilerStack() const noexcept { return m_compilerStack; }
 
 private:
 	/// Checks if the server is initialized (to be used by messages that need it to be initialized).
@@ -72,7 +73,9 @@ private:
 	void handleTextDocumentDidOpen(Json::Value const& _args);
 	void handleTextDocumentDidChange(Json::Value const& _args);
 	void handleTextDocumentDidClose(Json::Value const& _args);
+	void handleRename(Json::Value const& _args);
 	void handleGotoDefinition(MessageID _id, Json::Value const& _args);
+	void semanticTokensFull(MessageID _id, Json::Value const& _args);
 
 	/// Invoked when the server user-supplied configuration changes (initiated by the client).
 	void changeConfiguration(Json::Value const&);
@@ -92,7 +95,7 @@ private:
 	Transport& m_client;
 	std::map<std::string, MessageHandler> m_handlers;
 
-	/// Set of files known to be open by the client.
+	/// Set of files (names in URI form) known to be open by the client.
 	std::set<std::string> m_openFiles;
 	/// Set of source unit names for which we sent diagnostics to the client in the last iteration.
 	std::set<std::string> m_nonemptyDiagnostics;

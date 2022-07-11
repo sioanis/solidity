@@ -1,19 +1,66 @@
-### 0.8.14 (unreleased)
+### 0.8.16 (unreleased)
 
 Language Features:
 
 
 Compiler Features:
+ * TypeChecker: Support using library constants in initializers of other constants.
+ * Yul IR Code Generation: Improved copy routines for arrays with packed storage layout.
+ * Yul Optimizer: Add rule to convert `mod(mul(X, Y), A)` into `mulmod(X, Y, A)`, if `A` is a power of two.
+ * Yul Optimizer: Add rule to convert `mod(add(X, Y), A)` into `addmod(X, Y, A)`, if `A` is a power of two.
+ * Code Generator: More efficient code for checked addition and subtraction.
+ * Error Reporter: More readable and informative error/warning messages.
+
+Bugfixes:
+ * Commandline Interface: Disallow the following options outside of the compiler mode: ``--via-ir``,``--metadata-literal``, ``--metadata-hash``, ``--model-checker-show-unproved``, ``--model-checker-div-mod-no-slacks``, ``--model-checker-engine``, ``--model-checker-invariants``, ``--model-checker-solvers``, ``--model-checker-timeout``, ``--model-checker-contracts``, ``--model-checker-targets``.
+
+
+### 0.8.15 (2022-06-15)
+
+Important Bugfixes:
+ * Code Generation: Avoid writing dirty bytes to storage when copying ``bytes`` arrays.
+ * Yul Optimizer: Keep all memory side-effects of inline assembly blocks.
+
+
+Language Features:
+ * Add `E.selector` for a non-anonymous event `E` to access the 32-byte selector topic.
+
+
+Compiler Features:
+ * LSP: Add rudimentary support for semantic highlighting.
+ * Type Checker: Warn about assignments involving multiple pushes to storage ``bytes`` that may invalidate references.
+ * Yul Optimizer: Improve inlining heuristics for via IR code generation and pure Yul compilation.
+
+
+Bugfixes:
+ * ABI Encoder: When encoding an empty string coming from storage do not add a superfluous empty slot for data.
+ * Common Subexpression Eliminator: Process assembly items in chunks with maximum size of 2000. It helps to avoid extremely time-consuming searches during code optimization.
+ * Yul IR Code Generation: More robust cleanup in corner cases during memory to storage copies.
+ * Yul Optimizer: Do not remove ``returndatacopy`` in cases in which it might perform out-of-bounds reads that unconditionally revert as out-of-gas. Previously, any ``returndatacopy`` that wrote to memory that was never read from was removed without accounting for the out-of-bounds condition.
+ * DocString Parser: Fix ICE caused by an immutable struct with mapping.
+
+
+### 0.8.14 (2022-05-17)
+
+Important Bugfixes:
+ * ABI Encoder: When ABI-encoding values from calldata that contain nested arrays, correctly validate the nested array length against ``calldatasize()`` in all cases.
+ * Override Checker: Allow changing data location for parameters only when overriding external functions.
+
+
+Compiler Features:
+ * Assembly-Json Exporter: Include source list in `sourceList` field.
+ * Commandline Interface: Option ``--pretty-json`` works also with the following options: ``--abi``, ``--asm-json``, ``--ast-compact-json``, ``--devdoc``, ``--storage-layout``, ``--userdoc``.
+ * Language Server: Allow full filesystem access to language server.
  * Peephole Optimizer: Remove operations without side effects before simple terminations.
- * Assembly-Json: Export: Include source list in `sourceList` field.
- * Commandline Interface: option ``--pretty-json`` works also with the following options: ``--abi``, ``--asm-json``, ``--ast-compact-json``, ``--devdoc``, ``--storage-layout``, ``--userdoc``.
  * SMTChecker: Support ``abi.encodeCall`` taking into account the called selector.
 
 
 Bugfixes:
-* Assembly-Json: Fix assembly json export to store jump types of operations in `jumpType` field instead of `value`.
-* TypeChecker: Convert parameters of function type to how they would be called for ``abi.encodeCall``.
-
+ * Assembly-Json Exporter: Fix assembly json export to store jump types of operations in `jumpType` field instead of `value`.
+ * SMTChecker: Fix ABI compatibility with z3 >=4.8.16.
+ * SMTChecker: Fix bug when z3 is selected but not available at runtime.
+ * Type Checker: Properly check restrictions of ``using ... global`` in conjunction with libraries.
+ * TypeChecker: Convert parameters of function type to how they would be called for ``abi.encodeCall``.
 
 
 ### 0.8.13 (2022-03-16)

@@ -29,7 +29,18 @@
 #error "Unsupported Boost version. At least 1.65 required."
 #endif
 
+// TODO: do this only conditionally as soon as a boost version with gcc 12 support is released.
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 12)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#pragma GCC diagnostic ignored "-Wstringop-overread"
+#pragma GCC diagnostic ignored "-Waggressive-loop-optimizations"
+#endif
 #include <boost/multiprecision/cpp_int.hpp>
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 12)
+#pragma GCC diagnostic pop
+#endif
 
 #include <limits>
 

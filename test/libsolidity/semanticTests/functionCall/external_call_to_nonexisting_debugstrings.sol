@@ -23,13 +23,12 @@ contract C {
 
 // ====
 // EVMVersion: >=byzantium
-// compileViaYul: also
 // revertStrings: debug
 // ----
 // constructor(), 1 ether ->
-// gas irOptimized: 446871
-// gas legacy: 832976
-// gas legacyOptimized: 509560
+// gas irOptimized: 428444
+// gas legacy: 825625
+// gas legacyOptimized: 508492
 // f(uint256): 0 -> FAILURE, hex"08c379a0", 0x20, 37, "Target contract does not contain", " code"
 // f(uint256): 1 -> FAILURE, hex"08c379a0", 0x20, 37, "Target contract does not contain", " code"
 // f(uint256): 2 -> FAILURE, hex"08c379a0", 0x20, 37, "Target contract does not contain", " code"

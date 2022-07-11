@@ -699,7 +699,7 @@ string ABIFunctions::abiEncodingFunctionCompactStorageArray(
 					case 0 {
 						// short byte array
 						mstore(pos, and(slotValue, not(0xff)))
-						ret := add(pos, <lengthPaddedShort>)
+						ret := add(pos, mul(<lengthPaddedShort>, iszero(iszero(length))))
 					}
 					case 1 {
 						// long byte array
@@ -1454,7 +1454,7 @@ string ABIFunctions::calldataAccessFunction(Type const& _type)
 					length := calldataload(value)
 					value := add(value, 0x20)
 					if gt(length, 0xffffffffffffffff) { <revertStringLength>() }
-					if sgt(base_ref, sub(calldatasize(), mul(length, <calldataStride>))) { <revertStringStride>() }
+					if sgt(value, sub(calldatasize(), mul(length, <calldataStride>))) { <revertStringStride>() }
 				)")
 				("calldataStride", toCompactHexWithPrefix(arrayType->calldataStride()))
 				// TODO add test

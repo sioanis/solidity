@@ -28,7 +28,7 @@ REPO_ROOT=$(realpath "$(dirname "$0")/../..")
 
 verify_input "$@"
 BINARY_TYPE="$1"
-BINARY_PATH="$2"
+BINARY_PATH="$(realpath "$2")"
 SELECTED_PRESETS="$3"
 
 function compile_fn { yarn build; }
@@ -37,8 +37,8 @@ function test_fn { yarn test; }
 function ens_test
 {
     local repo="https://github.com/ensdomains/ens-contracts.git"
-    local ref_type=tag
-    local ref="v0.0.8"     # The project is in flux right now and master might be too unstable for us
+    local ref_type=commit
+    local ref="083d29a2c50cd0a8307386abf8fadc217b256256"
     local config_file="hardhat.config.js"
 
     local compile_only_presets=(
@@ -65,12 +65,22 @@ function ens_test
     force_hardhat_compiler_settings "$config_file" "$(first_word "$SELECTED_PRESETS")"
     yarn install
 
-    # With ethers.js 5.6.2 many tests for revert messages fail.
-    # TODO: Remove when https://github.com/ethers-io/ethers.js/discussions/2849 is resolved.
-    yarn add ethers@5.6.1
-
     replace_version_pragmas
     neutralize_packaged_contracts
+
+    # In some cases Hardhat does not detect revert reasons properly via IR.
+    # TODO: Remove this when https://github.com/NomicFoundation/hardhat/issues/2115 gets fixed.
+    sed -i "s|it\(('Does not allow wrapping a name you do not own',\)|it.skip\1|g" test/wrapper/NameWrapper.js
+    # TODO: Remove this when https://github.com/NomicFoundation/hardhat/issues/2453 gets fixed.
+    sed -i "s|it\(('can set fuses and then burn ability to burn fuses',\)|it.skip\1|g" test/wrapper/NameWrapper.js
+    sed -i "s|it\(('can set fuses and burn canSetResolver and canSetTTL',\)|it.skip\1|g" test/wrapper/NameWrapper.js
+    sed -i "s|it\(('Cannot be called if CANNOT_TRANSFER is burned\.',\)|it.skip\1|g" test/wrapper/NameWrapper.js
+    sed -i "s|it\(('Cannot be called if CANNOT_SET_RESOLVER is burned\.\?',\)|it.skip\1|g" test/wrapper/NameWrapper.js
+    sed -i "s|it\(('Cannot be called if CANNOT_SET_TTL is burned\.\?',\)|it.skip\1|g" test/wrapper/NameWrapper.js
+    sed -i "s|it\(('Cannot be called if CREATE_SUBDOMAIN is burned and is a new subdomain',\)|it.skip\1|g" test/wrapper/NameWrapper.js
+    sed -i "s|it\(('Cannot be called if REPLACE_SUBDOMAIN is burned and is an existing subdomain',\)|it.skip\1|g" test/wrapper/NameWrapper.js
+    sed -i "s|it\(('Cannot be called if CANNOT_CREATE_SUBDOMAIN is burned and is a new subdomain',\)|it.skip\1|g" test/wrapper/NameWrapper.js
+    sed -i "s|it\(('Cannot be called if PARENT_CANNOT_CONTROL is burned and is an existing subdomain',\)|it.skip\1|g" test/wrapper/NameWrapper.js
 
     find . -name "*.sol" -exec sed -i -e 's/^\(\s*\)\(assembly\)/\1\/\/\/ @solidity memory-safe-assembly\n\1\2/' '{}' \;
 

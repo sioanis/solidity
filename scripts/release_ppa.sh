@@ -48,7 +48,7 @@ else
 fi
 
 is_release() {
-    [[ "${branch}" = "release" ]] || [[ "${branch}" =~ ^v[0-9]+(\.[0-9])*$ ]]
+    [[ "${branch}" =~ ^v[0-9]+(\.[0-9]+)*$ ]]
 }
 
 keyid=379F4801D622CDCF
@@ -57,7 +57,7 @@ packagename=solc
 
 static_build_distribution=impish
 
-DISTRIBUTIONS="focal impish jammy"
+DISTRIBUTIONS="focal impish jammy kinetic"
 
 if is_release
 then
@@ -108,7 +108,7 @@ mv solidity solc
 # Fetch dependencies
 mkdir -p ./solc/deps/downloads/ 2>/dev/null || true
 wget -O ./solc/deps/downloads/jsoncpp-1.9.3.tar.gz https://github.com/open-source-parsers/jsoncpp/archive/1.9.3.tar.gz
-wget -O ./solc/deps/downloads/range-v3-0.11.0.tar.gz https://github.com/ericniebler/range-v3/archive/0.11.0.tar.gz
+wget -O ./solc/deps/downloads/range-v3-0.12.0.tar.gz https://github.com/ericniebler/range-v3/archive/0.12.0.tar.gz
 wget -O ./solc/deps/downloads/fmt-8.0.1.tar.gz https://github.com/fmtlib/fmt/archive/8.0.1.tar.gz
 
 # Determine version

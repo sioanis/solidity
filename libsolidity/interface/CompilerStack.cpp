@@ -404,7 +404,8 @@ void CompilerStack::importASTs(map<string, Json::Value> const& _sources)
 		source.ast = src.second;
 		source.charStream = make_shared<CharStream>(
 			util::jsonCompactPrint(m_sourceJsons[src.first]),
-			src.first
+			src.first,
+			true // imported from AST
 		);
 		m_sources[path] = move(source);
 	}
@@ -479,12 +480,6 @@ bool CompilerStack::analyze()
 			if (auto sourceAst = source->ast)
 				noErrors = contractLevelChecker.check(*sourceAst);
 
-		// Requires ContractLevelChecker
-		DocStringAnalyser docStringAnalyser(m_errorReporter);
-		for (Source const* source: m_sourceOrder)
-			if (source->ast && !docStringAnalyser.analyseDocStrings(*source->ast))
-				noErrors = false;
-
 		// Now we run full type checks that go down to the expression level. This
 		// cannot be done earlier, because we need cross-contract types and information
 		// about whether a contract is abstract for the `new` expression.
@@ -496,6 +491,15 @@ bool CompilerStack::analyze()
 		for (Source const* source: m_sourceOrder)
 			if (source->ast && !typeChecker.checkTypeRequirements(*source->ast))
 				noErrors = false;
+
+		if (noErrors)
+		{
+			// Requires ContractLevelChecker and TypeChecker
+			DocStringAnalyser docStringAnalyser(m_errorReporter);
+			for (Source const* source: m_sourceOrder)
+				if (source->ast && !docStringAnalyser.analyseDocStrings(*source->ast))
+					noErrors = false;
+		}
 
 		if (noErrors)
 		{
@@ -1282,7 +1286,7 @@ void CompilerStack::assemble(
 			"Contract code size is "s +
 			to_string(compiledContract.runtimeObject.bytecode.size()) +
 			" bytes and exceeds 24576 bytes (a limit introduced in Spurious Dragon). "
-			"This contract may not be deployable on mainnet. "
+			"This contract may not be deployable on Mainnet. "
 			"Consider enabling the optimizer (with a low \"runs\" value!), "
 			"turning off revert strings, or using libraries."
 		);

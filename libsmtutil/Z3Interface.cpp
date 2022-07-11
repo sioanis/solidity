@@ -20,6 +20,7 @@
 
 #include <libsolutil/CommonData.h>
 #include <libsolutil/CommonIO.h>
+#include <libsolutil/Exceptions.h>
 
 #ifdef HAVE_Z3_DLOPEN
 #include <libsmtutil/Z3Loader.h>
@@ -263,14 +264,17 @@ z3::expr Z3Interface::toZ3Expr(Expression const& _expr)
 			return constructor(args);
 		}
 
-		smtAssert(false, "");
+		smtAssert(false);
 	}
 	catch (z3::exception const& _e)
 	{
 		smtAssert(false, _e.msg());
 	}
 
-	smtAssert(false, "");
+	smtAssert(false);
+
+	// FIXME: Workaround for spurious GCC 12.1 warning (https://gcc.gnu.org/bugzilla/show_bug.cgi?id=105794)
+	util::unreachable();
 }
 
 Expression Z3Interface::fromZ3Expr(z3::expr const& _expr)
@@ -298,6 +302,7 @@ Expression Z3Interface::fromZ3Expr(z3::expr const& _expr)
 		arguments.push_back(fromZ3Expr(_expr.arg(i)));
 
 	auto kind = _expr.decl().decl_kind();
+
 	if (_expr.is_ite())
 		return Expression::ite(arguments[0], arguments[1], arguments[2]);
 	else if (_expr.is_not())
@@ -371,10 +376,16 @@ Expression Z3Interface::fromZ3Expr(z3::expr const& _expr)
 		return Expression("dt_accessor_" + _expr.decl().name().str(), arguments, sort);
 	else if (kind == Z3_OP_DT_IS)
 		return Expression("dt_is", {arguments.at(0)}, sort);
-	else if (kind == Z3_OP_UNINTERPRETED)
+	else if (
+		kind == Z3_OP_UNINTERPRETED ||
+		kind == Z3_OP_RECURSIVE
+	)
 		return Expression(_expr.decl().name().str(), arguments, fromZ3Sort(_expr.get_sort()));
 
-	smtAssert(false, "");
+	smtAssert(false);
+
+	// FIXME: Workaround for spurious GCC 12.1 warning (https://gcc.gnu.org/bugzilla/show_bug.cgi?id=105794)
+	util::unreachable();
 }
 
 z3::sort Z3Interface::z3Sort(Sort const& _sort)

@@ -38,6 +38,7 @@
 #include <cctype>
 #include <vector>
 #include <regex>
+#include <tuple>
 
 using namespace std;
 using namespace solidity::langutil;
@@ -142,7 +143,7 @@ ASTPointer<SourceUnit> Parser::parse(CharStream& _charStream)
 					expectToken(Token::Semicolon);
 				}
 				else
-					fatalParserError(7858_error, "Expected pragma, import directive or contract/interface/library/struct/enum/constant/function definition.");
+					fatalParserError(7858_error, "Expected pragma, import directive or contract/interface/library/struct/enum/constant/function/error definition.");
 			}
 		}
 		solAssert(m_recursionDepth == 0, "");
@@ -1061,14 +1062,24 @@ ASTPointer<IdentifierPath> Parser::parseIdentifierPath()
 	RecursionGuard recursionGuard(*this);
 	ASTNodeFactory nodeFactory(*this);
 	nodeFactory.markEndPosition();
-	vector<ASTString> identifierPath{*expectIdentifierToken()};
+
+	auto [name, nameLocation] = expectIdentifierWithLocation();
+
+	vector<ASTString> identifierPath{*name};
+	vector<SourceLocation> identifierPathLocations{nameLocation};
+
 	while (m_scanner->currentToken() == Token::Period)
 	{
 		advance();
+
 		nodeFactory.markEndPosition();
-		identifierPath.push_back(*expectIdentifierTokenOrAddress());
+
+		tie(name, nameLocation) = expectIdentifierWithLocation();
+
+		identifierPath.push_back(*name);
+		identifierPathLocations.push_back(nameLocation);
 	}
-	return nodeFactory.createNode<IdentifierPath>(identifierPath);
+	return nodeFactory.createNode<IdentifierPath>(identifierPath, identifierPathLocations);
 }
 
 ASTPointer<TypeName> Parser::parseTypeNameSuffix(ASTPointer<TypeName> type, ASTNodeFactory& nodeFactory)
@@ -1532,13 +1543,16 @@ ASTPointer<EmitStatement> Parser::parseEmitStatement(ASTPointer<ASTString> const
 	auto eventName = expressionFromIndexAccessStructure(iap);
 	expectToken(Token::LParen);
 
-	vector<ASTPointer<Expression>> arguments;
-	vector<ASTPointer<ASTString>> names;
-	std::tie(arguments, names) = parseFunctionCallArguments();
+	auto functionCallArguments = parseFunctionCallArguments();
 	eventCallNodeFactory.markEndPosition();
 	nodeFactory.markEndPosition();
 	expectToken(Token::RParen);
-	auto eventCall = eventCallNodeFactory.createNode<FunctionCall>(eventName, arguments, names);
+	auto eventCall = eventCallNodeFactory.createNode<FunctionCall>(
+		eventName,
+		functionCallArguments.arguments,
+		functionCallArguments.parameterNames,
+		functionCallArguments.parameterNameLocations
+	);
 	return nodeFactory.createNode<EmitStatement>(_docString, eventCall);
 }
 
@@ -1563,13 +1577,16 @@ ASTPointer<RevertStatement> Parser::parseRevertStatement(ASTPointer<ASTString> c
 	auto errorName = expressionFromIndexAccessStructure(iap);
 	expectToken(Token::LParen);
 
-	vector<ASTPointer<Expression>> arguments;
-	vector<ASTPointer<ASTString>> names;
-	std::tie(arguments, names) = parseFunctionCallArguments();
+	auto functionCallArguments = parseFunctionCallArguments();
 	errorCallNodeFactory.markEndPosition();
 	nodeFactory.markEndPosition();
 	expectToken(Token::RParen);
-	auto errorCall = errorCallNodeFactory.createNode<FunctionCall>(errorName, arguments, names);
+	auto errorCall = errorCallNodeFactory.createNode<FunctionCall>(
+		errorName,
+		functionCallArguments.arguments,
+		functionCallArguments.parameterNames,
+		functionCallArguments.parameterNameLocations
+	);
 	return nodeFactory.createNode<RevertStatement>(_docString, errorCall);
 }
 
@@ -1637,7 +1654,7 @@ ASTPointer<Statement> Parser::parseSimpleStatement(ASTPointer<ASTString> const& 
 			return parseExpressionStatement(_docString, nodeFactory.createNode<TupleExpression>(components, false));
 		}
 		default:
-			solAssert(false, "");
+			solAssert(false);
 		}
 	}
 	else
@@ -1650,17 +1667,19 @@ ASTPointer<Statement> Parser::parseSimpleStatement(ASTPointer<ASTString> const& 
 		case LookAheadInfo::Expression:
 			return parseExpressionStatement(_docString, expressionFromIndexAccessStructure(iap));
 		default:
-			solAssert(false, "");
+			solAssert(false);
 		}
 	}
+
+	// FIXME: Workaround for spurious GCC 12.1 warning (https://gcc.gnu.org/bugzilla/show_bug.cgi?id=105794)
+	util::unreachable();
 }
 
 bool Parser::IndexAccessedPath::empty() const
 {
 	if (!indices.empty())
-	{
-		solAssert(!path.empty(), "");
-	}
+		solAssert(!path.empty());
+
 	return path.empty() && indices.empty();
 }
 
@@ -1885,18 +1904,22 @@ ASTPointer<Expression> Parser::parseLeftHandSideExpression(
 		{
 			advance();
 			nodeFactory.markEndPosition();
-			expression = nodeFactory.createNode<MemberAccess>(expression, expectIdentifierTokenOrAddress());
+			SourceLocation memberLocation = currentLocation();
+			ASTPointer<ASTString> memberName = expectIdentifierTokenOrAddress();
+			expression = nodeFactory.createNode<MemberAccess>(expression, std::move(memberName), std::move(memberLocation));
 			break;
 		}
 		case Token::LParen:
 		{
 			advance();
-			vector<ASTPointer<Expression>> arguments;
-			vector<ASTPointer<ASTString>> names;
-			std::tie(arguments, names) = parseFunctionCallArguments();
+			auto functionCallArguments = parseFunctionCallArguments();
 			nodeFactory.markEndPosition();
 			expectToken(Token::RParen);
-			expression = nodeFactory.createNode<FunctionCall>(expression, arguments, names);
+			expression = nodeFactory.createNode<FunctionCall>(
+				expression,
+				functionCallArguments.arguments,
+				functionCallArguments.parameterNames,
+				functionCallArguments.parameterNameLocations);
 			break;
 		}
 		case Token::LBrace:
@@ -1915,7 +1938,7 @@ ASTPointer<Expression> Parser::parseLeftHandSideExpression(
 			nodeFactory.markEndPosition();
 			expectToken(Token::RBrace);
 
-			expression = nodeFactory.createNode<FunctionCallOptions>(expression, optionList.first, optionList.second);
+			expression = nodeFactory.createNode<FunctionCallOptions>(expression, optionList.arguments, optionList.parameterNames);
 			break;
 		}
 		default:
@@ -2059,10 +2082,11 @@ vector<ASTPointer<Expression>> Parser::parseFunctionCallListArguments()
 	return arguments;
 }
 
-pair<vector<ASTPointer<Expression>>, vector<ASTPointer<ASTString>>> Parser::parseFunctionCallArguments()
+Parser::FunctionCallArguments Parser::parseFunctionCallArguments()
 {
 	RecursionGuard recursionGuard(*this);
-	pair<vector<ASTPointer<Expression>>, vector<ASTPointer<ASTString>>> ret;
+	FunctionCallArguments ret;
+
 	Token token = m_scanner->currentToken();
 	if (token == Token::LBrace)
 	{
@@ -2072,13 +2096,13 @@ pair<vector<ASTPointer<Expression>>, vector<ASTPointer<ASTString>>> Parser::pars
 		expectToken(Token::RBrace);
 	}
 	else
-		ret.first = parseFunctionCallListArguments();
+		ret.arguments = parseFunctionCallListArguments();
 	return ret;
 }
 
-pair<vector<ASTPointer<Expression>>, vector<ASTPointer<ASTString>>> Parser::parseNamedArguments()
+Parser::FunctionCallArguments Parser::parseNamedArguments()
 {
-	pair<vector<ASTPointer<Expression>>, vector<ASTPointer<ASTString>>> ret;
+	FunctionCallArguments ret;
 
 	bool first = true;
 	while (m_scanner->currentToken() != Token::RBrace)
@@ -2086,9 +2110,15 @@ pair<vector<ASTPointer<Expression>>, vector<ASTPointer<ASTString>>> Parser::pars
 		if (!first)
 			expectToken(Token::Comma);
 
-		ret.second.push_back(expectIdentifierToken());
+		auto identifierWithLocation = expectIdentifierWithLocation();
+
+		// Add name
+		ret.parameterNames.emplace_back(std::move(identifierWithLocation.first));
+		// Add location
+		ret.parameterNameLocations.emplace_back(std::move(identifierWithLocation.second));
+
 		expectToken(Token::Colon);
-		ret.first.push_back(parseExpression());
+		ret.arguments.emplace_back(parseExpression());
 
 		if (
 			m_scanner->currentToken() == Token::Comma &&
@@ -2284,9 +2314,16 @@ ASTPointer<TypeName> Parser::typeNameFromIndexAccessStructure(Parser::IndexAcces
 	else
 	{
 		vector<ASTString> path;
+		vector<SourceLocation> pathLocations;
+
 		for (auto const& el: _iap.path)
-			path.push_back(dynamic_cast<Identifier const&>(*el).name());
-		type = nodeFactory.createNode<UserDefinedTypeName>(nodeFactory.createNode<IdentifierPath>(path));
+		{
+			auto& identifier = dynamic_cast<Identifier const&>(*el);
+			path.push_back(identifier.name());
+			pathLocations.push_back(identifier.location());
+		}
+
+		type = nodeFactory.createNode<UserDefinedTypeName>(nodeFactory.createNode<IdentifierPath>(path, pathLocations));
 	}
 	for (auto const& lengthExpression: _iap.indices)
 	{
@@ -2316,7 +2353,8 @@ ASTPointer<Expression> Parser::expressionFromIndexAccessStructure(
 		Identifier const& identifier = dynamic_cast<Identifier const&>(*_iap.path[i]);
 		expression = nodeFactory.createNode<MemberAccess>(
 			expression,
-			make_shared<ASTString>(identifier.name())
+			make_shared<ASTString>(identifier.name()),
+			identifier.location()
 		);
 	}
 	for (auto const& index: _iap.indices)

@@ -28,7 +28,7 @@ REPO_ROOT=$(realpath "$(dirname "$0")/../..")
 
 verify_input "$@"
 BINARY_TYPE="$1"
-BINARY_PATH="$2"
+BINARY_PATH="$(realpath "$2")"
 SELECTED_PRESETS="$3"
 
 function compile_fn { npm run compile; }
@@ -85,6 +85,14 @@ function bleeps_test
     force_hardhat_compiler_settings "$config_file" "$(first_word "$SELECTED_PRESETS")" "$config_var"
     npm install npm-run-all
     npm install
+
+    # TODO: Bleeps depends on OpenZeppelin 4.3.2, which is affected by
+    # https://github.com/OpenZeppelin/openzeppelin-contracts/pull/3293.
+    # Forcing OZ >= 4.6.0 fixes this but it also causes a lot of unrelated compilation errors.
+    # Remove this when Bleeps gets updated to support newer OpenZeppelin.
+    perl -i -0pe \
+        "s/(function hashProposal\(\n        address\[\] )calldata( targets,\n        uint256\[\] )calldata( values,\n        bytes\[\] )calldata( calldatas,)/\1memory\2memory\3memory\4/g" \
+        node_modules/@openzeppelin/contracts/governance/IGovernor.sol
 
     replace_version_pragmas
 
